@@ -395,7 +395,7 @@ async function loadMentions(list, onTick) {
 // GDELT asks for one request every 5 seconds, so names go in groups of 10.
 async function loadNews(list, onTick) {
   const lastCount = new Map();
-  for (const p of list) lastCount.set(norm(p.last), (lastCount.get(norm(p.last)) || 0) + 1);
+  for (const p of players) lastCount.set(norm(p.last), (lastCount.get(norm(p.last)) || 0) + 1);
   const groups = chunks(list, 10);
   let failed = 0;
   for (let i = 0; i < groups.length; i++) {
@@ -434,12 +434,7 @@ async function loadLive() {
     render();
 
     // News runs at the same time as Wikipedia, because GDELT is slow on purpose.
-    const news = loadNews(list, (done, total, failed) => {
-      $("news-status").textContent = done < total
-        ? `News headlines: group ${done} of ${total}…`
-        : failed ? `News headlines: ${failed} of ${total} groups failed. Those players show "–".` : "News headlines: done.";
-      if (measure === "news" || done === total) render();
-    }).then(() => save());
+    const news = startNews(list);
 
     setStatus(`Found ${list.length} injured players. Finding their Wikipedia articles…`);
     let ticks = 0;
@@ -461,6 +456,19 @@ async function loadLive() {
   } finally {
     $("load").disabled = false;
   }
+}
+
+// Fills in the Headlines column group by group, so people can see it working.
+function startNews(list) {
+  return loadNews(list, (done, total, failed) => {
+    const found = players.reduce((a, p) => a + (p.headlines || 0), 0);
+    const tail = `${fmt(found)} headlines found` + (failed ? `, ${failed} groups failed (those players show "–")` : "");
+    $("news-status").textContent = done < total
+      ? `News headlines: group ${done} of ${total}… ${tail}. This takes about ${Math.ceil((total - done) * 5.5 / 60)} more min.`
+      : `News headlines: done. ${tail}.`;
+    render();
+    save();
+  });
 }
 
 function save() {
@@ -565,6 +573,9 @@ for (const b of document.querySelectorAll(".measure button")) b.addEventListener
       players = saved.players;
       stamp = saved.stamp;
       showLoaded();
+      // Finish the headlines if the page was closed before they were done.
+      const missing = players.filter(p => p.headlines == null);
+      if (missing.length) startNews(missing);
       return;
     }
   } catch (e) {}
