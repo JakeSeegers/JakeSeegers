@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
-/* Layout: a team-trainer's clipboard. Standings sheet on top, then the injury report you edit below. */
+/* Layout: a team-trainer's clipboard. Standings sheet on top, then the league-wide injury report. */
 :root {
   --bg: #e9eef2;
   --paper: #f8fafb;
@@ -72,189 +72,259 @@ tr.first .rank { color: var(--hurt); }
 .chip { display: inline-block; font: 600 .7rem/1 var(--font-data); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; }
 .chip.ignored { background: var(--hurt-soft); color: var(--hurt); }
 .chip.seen { background: var(--quiet-soft); color: var(--quiet); }
-input, select, button { font: inherit; color: var(--ink); }
-input, select { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
-input[type="number"] { width: 7.5rem; text-align: right; font-family: var(--font-data); }
-input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip.status { border: 1px solid var(--line); color: var(--muted); }
+a { color: var(--accent); }
+button, select { font: inherit; color: var(--ink); }
+select { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button { cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid var(--accent); background: var(--accent); color: var(--paper); font-weight: 600; }
-button.ghost { background: transparent; color: var(--accent); }
-button.x { padding: 3px 9px; background: transparent; border-color: var(--line); color: var(--muted); }
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-.row label { display: grid; gap: 4px; font-size: .78rem; color: var(--muted); }
-.row label input, .row label select { width: auto; min-width: 0; }
+button:disabled { opacity: .55; cursor: wait; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .note { font-size: .85rem; color: var(--muted); margin: 0; max-width: 70ch; }
+.status-line { font-family: var(--font-data); font-size: .85rem; color: var(--muted); }
+.status-line.error { color: var(--hurt); }
+.progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--accent); }
+.empty td { color: var(--muted); white-space: normal; }
 .why { border-left: 3px solid var(--hurt); padding-left: 14px; display: grid; gap: 8px; max-width: 68ch; }
-.why p { margin: 0; }
-.sample { font-size: .8rem; color: var(--muted); }
-@media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+.why p, .why ul { margin: 0; }
+.why ul { padding-left: 1.2em; }
+@media (prefers-reduced-motion: no-preference) { .bar span, .progress span { transition: width .4s ease; } }
 </style>
 </head>
 <body>
 <div class="wrap">
 
 <header>
-  <span class="eyebrow">Week-by-week injury report</span>
+  <span class="eyebrow">Live NFL injury report</span>
   <h1>Quiet Injury League</h1>
-  <p>A fantasy league where you draft the hurt players nobody talks about. Your team wins when its players have many injuries and the internet has looked them up very little.</p>
-  <div class="formula"><b>Silence Score</b> = injuries ÷ searches × 10,000</div>
+  <p>All 32 NFL teams, rated by how many of their players are hurt right now and how little the internet looks those players up. The team with the most injuries and the least attention "wins".</p>
+  <div class="formula"><b>Silence Score</b> = injured players ÷ Wikipedia views (30 days) × 100,000</div>
 </header>
+
+<section aria-labelledby="load-h">
+  <h2 id="load-h" hidden>Data</h2>
+  <div class="row">
+    <button id="load" type="button">Load live data</button>
+    <span id="status" class="status-line">Not loaded yet.</span>
+  </div>
+  <div class="progress" aria-hidden="true"><span id="bar"></span></div>
+</section>
 
 <section aria-labelledby="standings-h">
   <h2 id="standings-h">Standings</h2>
   <div class="sheet">
     <table>
-      <thead><tr><th></th><th>Team</th><th class="num">Injuries</th><th class="num">Searches</th><th class="num">Silence Score</th><th></th></tr></thead>
-      <tbody id="standings"></tbody>
+      <thead><tr><th></th><th>Team</th><th class="num">Injured</th><th class="num">Views</th><th class="num">Silence Score</th><th></th></tr></thead>
+      <tbody id="standings"><tr class="empty"><td colspan="6">Press "Load live data" to rate the 32 teams.</td></tr></tbody>
     </table>
   </div>
-  <p class="note">Higher score = more injuries that got less attention. Top team "wins".</p>
+  <p class="note">Higher score = more hurt players that got less attention.</p>
 </section>
 
 <section aria-labelledby="report-h">
-  <h2 id="report-h">Injury Report</h2>
-  <p class="sample">Example players and numbers. They are made up. Change any number, or add real ones from an injury report and Google Trends.</p>
+  <div class="row" style="justify-content: space-between">
+    <h2 id="report-h">Injury Report</h2>
+    <label class="note">Team <select id="filter"><option value="">All teams</option></select></label>
+  </div>
   <div class="sheet">
     <table>
-      <thead><tr><th>Player</th><th>Pos</th><th>Injury</th><th class="num">Injuries</th><th class="num">Searches / mo</th><th class="num">Per player</th><th>Team</th><th></th></tr></thead>
-      <tbody id="players"></tbody>
+      <thead><tr><th>Player</th><th>Team</th><th>Pos</th><th>Status</th><th>Injury</th><th class="num">Views (30 d)</th><th>Attention</th></tr></thead>
+      <tbody id="players"><tr class="empty"><td colspan="7">The most ignored injuries show first.</td></tr></tbody>
     </table>
   </div>
-
-  <form id="add" class="row" autocomplete="off">
-    <label>Player<input id="f-name" required placeholder="Name"></label>
-    <label>Pos<input id="f-pos" required placeholder="OL" size="4"></label>
-    <label>Injury<input id="f-inj" required placeholder="Concussion"></label>
-    <label>Injuries<input id="f-count" type="number" min="0" value="1" required></label>
-    <label>Searches / mo<input id="f-search" type="number" min="0" value="500" required></label>
-    <label>Team<select id="f-team"></select></label>
-    <button type="submit">Add player</button>
-    <button type="button" class="ghost" id="reset">Reset to example</button>
-  </form>
 </section>
 
 <section class="why" aria-labelledby="why-h">
-  <h2 id="why-h">Why this league exists</h2>
-  <p>Fans search for a star quarterback's ankle millions of times. A backup lineman with his third concussion gets almost no searches. The harm is the same kind of harm. The attention is not.</p>
-  <p>Normal fantasy football turns players into points. This league uses the same format to show the bodies the game uses up quietly. If your team is winning here, that is the problem.</p>
+  <h2 id="why-h">Where the numbers come from</h2>
+  <ul>
+    <li><b>Injuries:</b> the current NFL injury list from the <a href="https://docs.sleeper.com/" target="_blank" rel="noopener">Sleeper API</a>. A player counts if his status is IR, PUP, Out, Doubtful or Questionable.</li>
+    <li><b>Attention:</b> each player's English Wikipedia page views for the last 30 days, from the <a href="https://www.mediawiki.org/wiki/API:Main_page" target="_blank" rel="noopener">Wikipedia API</a>. Google does not publish real search counts, so page views are the closest free, public measure.</li>
+    <li>The app finds each player's article with a Wikipedia search. Click a player's name to check the match. Players with no article count as 0 views.</li>
+  </ul>
+  <p>Fans look up a star quarterback's ankle hundreds of thousands of times. A backup lineman with a concussion gets almost no views. The harm is the same kind of harm. The attention is not. If a team is winning this league, that is the problem.</p>
 </section>
 
 </div>
 
 <script>
-const TEAMS = ["Free agent", "Turf Burns", "The Trainer's Table", "Next Man Up", "Sideline Tents"];
+const TEAMS = {
+  ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
+  CAR: "Carolina Panthers", CHI: "Chicago Bears", CIN: "Cincinnati Bengals", CLE: "Cleveland Browns",
+  DAL: "Dallas Cowboys", DEN: "Denver Broncos", DET: "Detroit Lions", GB: "Green Bay Packers",
+  HOU: "Houston Texans", IND: "Indianapolis Colts", JAX: "Jacksonville Jaguars", KC: "Kansas City Chiefs",
+  LV: "Las Vegas Raiders", LAC: "Los Angeles Chargers", LAR: "Los Angeles Rams", MIA: "Miami Dolphins",
+  MIN: "Minnesota Vikings", NE: "New England Patriots", NO: "New Orleans Saints", NYG: "New York Giants",
+  NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SF: "San Francisco 49ers",
+  SEA: "Seattle Seahawks", TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Commanders"
+};
+const INJURED = ["IR", "PUP", "Out", "Doubtful", "Questionable"];
+const CACHE_KEY = "quiet-injury-league-live-v1";
+const CACHE_HOURS = 12;
+const WIKI = "https://en.wikipedia.org/w/api.php";
 
-const EXAMPLE = [
-  { name: "Marcus Hale",    pos: "QB", injury: "High ankle sprain", count: 1, searches: 410000, team: 1 },
-  { name: "Dre Okafor",     pos: "OL", injury: "Concussion (3rd)",  count: 3, searches: 900,    team: 1 },
-  { name: "Lenny Bausch",   pos: "LS", injury: "Torn labrum",       count: 1, searches: 120,    team: 1 },
-  { name: "Tyrell Means",   pos: "WR", injury: "Hamstring",         count: 2, searches: 185000, team: 2 },
-  { name: "Owen Pruitt",    pos: "DT", injury: "Knee (MCL)",        count: 2, searches: 2100,   team: 2 },
-  { name: "Sam Kowalczyk",  pos: "OL", injury: "Neck stinger",      count: 3, searches: 650,    team: 2 },
-  { name: "Jalen Brooks",   pos: "RB", injury: "Torn ACL",          count: 1, searches: 260000, team: 3 },
-  { name: "Cal Whitford",   pos: "TE", injury: "Concussion",        count: 2, searches: 7400,   team: 3 },
-  { name: "Isaiah Fenn",    pos: "CB", injury: "Turf toe",          count: 1, searches: 3300,   team: 3 },
-  { name: "Rocco Delgado",  pos: "OL", injury: "Back spasms",       count: 4, searches: 380,    team: 4 },
-  { name: "Wes Arnaud",     pos: "FB", injury: "Concussion",        count: 2, searches: 210,    team: 4 },
-  { name: "Theo Banks",     pos: "LB", injury: "Shoulder",          count: 2, searches: 15500,  team: 4 },
-  { name: "Kenji Ross",     pos: "S",  injury: "Concussion",        count: 1, searches: 1800,   team: 0 },
-  { name: "Darnell Spike",  pos: "DE", injury: "Achilles",          count: 1, searches: 52000,  team: 0 }
-];
-
-const KEY = "quiet-injury-league-v1";
-let players = load();
-
-function load() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
-    if (Array.isArray(saved)) return saved;
-  } catch (e) {}
-  return EXAMPLE.map(p => ({ ...p }));
-}
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(players)); } catch (e) {}
-}
-
-// Injuries per 10,000 searches. Zero searches counts as 1 so the score stays finite.
-function silence(injuries, searches) {
-  return injuries / Math.max(searches, 1) * 10000;
-}
+const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString("en-US");
 const fmtScore = n => n >= 100 ? fmt(Math.round(n)) : n.toFixed(n >= 10 ? 1 : 2);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Injured players per 100,000 page views. Zero views counts as 1 so the score stays finite.
+function silence(injured, views) {
+  return injured / Math.max(views, 1) * 100000;
+}
+
+let players = [];
+
+function setStatus(text, isError) {
+  $("status").textContent = text;
+  $("status").classList.toggle("error", !!isError);
+}
+function setProgress(f) { $("bar").style.width = (f * 100).toFixed(1) + "%"; }
+
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} from ${new URL(url).host}`);
+  return res.json();
+}
+
+async function loadInjuries() {
+  const all = await getJSON("https://api.sleeper.app/v1/players/nfl");
+  return Object.entries(all)
+    .map(([id, p]) => ({ id, ...p }))
+    .filter(p => p.team && TEAMS[p.team] && INJURED.includes(p.injury_status))
+    .map(p => ({
+      id: p.id,
+      name: p.full_name || `${p.first_name} ${p.last_name}`,
+      last: p.last_name || "",
+      team: p.team,
+      pos: p.position || "",
+      status: p.injury_status,
+      injury: [p.injury_body_part, p.injury_notes].filter(Boolean).join(" – ") || "Not listed"
+    }));
+}
+
+// One request per player: search Wikipedia for the player and get the top hit's daily views.
+async function lookupViews(p) {
+  const params = new URLSearchParams({
+    action: "query", format: "json", origin: "*", formatversion: "2",
+    generator: "search", gsrsearch: `${p.name} American football ${TEAMS[p.team]}`, gsrlimit: "1",
+    prop: "pageviews", pvipdays: "30"
+  });
+  const data = await getJSON(`${WIKI}?${params}`);
+  const page = data.query?.pages?.[0];
+  // Only trust the hit if the article title has the player's last name in it.
+  if (!page || (p.last && !page.title.toLowerCase().includes(p.last.toLowerCase()))) {
+    return { article: null, views: 0 };
+  }
+  const views = Object.values(page.pageviews || {}).reduce((a, v) => a + (v || 0), 0);
+  return { article: page.title, views };
+}
+
+async function runPool(items, size, fn, onTick) {
+  let next = 0, done = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      try { Object.assign(items[i], await fn(items[i])); }
+      catch (e) { Object.assign(items[i], { article: null, views: 0, failed: true }); }
+      onTick(++done);
+    }
+  }
+  await Promise.all(Array.from({ length: size }, worker));
+}
+
+async function loadLive() {
+  $("load").disabled = true;
+  setProgress(0);
+  try {
+    setStatus("Getting the NFL injury list…");
+    const list = await loadInjuries();
+    setProgress(0.1);
+    setStatus(`Found ${list.length} injured players. Getting Wikipedia views…`);
+    await runPool(list, 6, lookupViews, done => {
+      setProgress(0.1 + 0.9 * done / list.length);
+      setStatus(`Getting Wikipedia views… ${done} of ${list.length}`);
+    });
+    players = list;
+    const stamp = new Date().toISOString();
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stamp, players })); } catch (e) {}
+    showLoaded(stamp);
+  } catch (e) {
+    setStatus(`Could not load the data (${e.message}). Check your internet connection and try again. This page must be opened as a normal web page, not inside a preview.`, true);
+  } finally {
+    $("load").disabled = false;
+  }
+}
+
+function showLoaded(stamp) {
+  const failed = players.filter(p => p.failed).length;
+  const when = new Date(stamp).toLocaleString();
+  setStatus(`Live data from ${when}. ${players.length} injured players.` + (failed ? ` ${failed} view lookups failed and count as 0.` : ""));
+  setProgress(1);
+  $("load").textContent = "Refresh data";
+  render();
+}
 
 function renderStandings() {
-  const rows = TEAMS.slice(1).map((name, i) => {
-    const roster = players.filter(p => p.team === i + 1);
-    const inj = roster.reduce((a, p) => a + p.count, 0);
-    const srch = roster.reduce((a, p) => a + p.searches, 0);
-    return { name, size: roster.length, inj, srch, score: roster.length ? silence(inj, srch) : 0 };
+  const rows = Object.entries(TEAMS).map(([abbr, name]) => {
+    const roster = players.filter(p => p.team === abbr);
+    const views = roster.reduce((a, p) => a + p.views, 0);
+    return { abbr, name, injured: roster.length, views, score: roster.length ? silence(roster.length, views) : 0 };
   }).sort((a, b) => b.score - a.score);
   const top = Math.max(...rows.map(r => r.score), 1);
-  document.getElementById("standings").innerHTML = rows.map((r, i) => `
+  $("standings").innerHTML = rows.map((r, i) => `
     <tr class="${i === 0 && r.score > 0 ? "first" : ""}">
       <td class="rank">${i + 1}</td>
-      <td class="team-name">${esc(r.name)}<span class="team-sub">${r.size} player${r.size === 1 ? "" : "s"}</span></td>
-      <td class="num">${fmt(r.inj)}</td>
-      <td class="num">${fmt(r.srch)}</td>
+      <td class="team-name">${esc(r.name)}<span class="team-sub">${r.abbr}</span></td>
+      <td class="num">${fmt(r.injured)}</td>
+      <td class="num">${fmt(r.views)}</td>
       <td class="num score">${fmtScore(r.score)}</td>
       <td><div class="bar"><span style="width:${(r.score / top * 100).toFixed(1)}%"></span></div></td>
     </tr>`).join("");
 }
 
 function renderPlayers() {
-  const sorted = players.map((p, i) => ({ p, i })).sort((a, b) => silence(b.p.count, b.p.searches) - silence(a.p.count, a.p.searches));
-  document.getElementById("players").innerHTML = sorted.map(({ p, i }) => {
-    const s = silence(p.count, p.searches);
-    const chip = s >= 10 ? `<span class="chip ignored">Ignored</span>` : `<span class="chip seen">Seen</span>`;
+  const team = $("filter").value;
+  const list = players.filter(p => !team || p.team === team).sort((a, b) => a.views - b.views);
+  if (!list.length) {
+    $("players").innerHTML = `<tr class="empty"><td colspan="7">No injured players listed for this team.</td></tr>`;
+    return;
+  }
+  $("players").innerHTML = list.map(p => {
+    const name = p.article
+      ? `<a href="https://en.wikipedia.org/wiki/${encodeURIComponent(p.article.replace(/ /g, "_"))}" target="_blank" rel="noopener">${esc(p.name)}</a>`
+      : `${esc(p.name)} <span class="team-sub">No Wikipedia article found</span>`;
+    const chip = p.views < 3000 ? `<span class="chip ignored">Ignored</span>` : `<span class="chip seen">Seen</span>`;
     return `<tr>
-      <td>${esc(p.name)}</td>
+      <td>${name}</td>
+      <td>${p.team}</td>
       <td>${esc(p.pos)}</td>
+      <td><span class="chip status">${esc(p.status)}</span></td>
       <td>${esc(p.injury)}</td>
-      <td class="num"><input id="c-${i}" type="number" min="0" value="${p.count}" data-i="${i}" data-k="count" aria-label="Injuries for ${esc(p.name)}"></td>
-      <td class="num"><input id="s-${i}" type="number" min="0" value="${p.searches}" data-i="${i}" data-k="searches" aria-label="Searches for ${esc(p.name)}"></td>
-      <td class="num">${fmtScore(s)} ${chip}</td>
-      <td><select id="t-${i}" data-i="${i}" data-k="team" aria-label="Team for ${esc(p.name)}">${TEAMS.map((t, ti) => `<option value="${ti}"${ti === p.team ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></td>
-      <td><button class="x" data-del="${i}" aria-label="Remove ${esc(p.name)}">×</button></td>
+      <td class="num">${fmt(p.views)}</td>
+      <td>${chip}</td>
     </tr>`;
   }).join("");
 }
 
 function render() { renderStandings(); renderPlayers(); }
 
-const tbody = document.getElementById("players");
-tbody.addEventListener("change", e => {
-  const el = e.target, i = +el.dataset.i, k = el.dataset.k;
-  if (!k) return;
-  players[i][k] = Math.max(0, parseInt(el.value, 10) || 0);
-  save(); render();
-});
-tbody.addEventListener("click", e => {
-  const d = e.target.dataset.del;
-  if (d === undefined) return;
-  players.splice(+d, 1);
-  save(); render();
-});
+$("filter").innerHTML += Object.entries(TEAMS).map(([a, n]) => `<option value="${a}">${esc(n)}</option>`).join("");
+$("filter").addEventListener("change", renderPlayers);
+$("load").addEventListener("click", loadLive);
 
-const teamSel = document.getElementById("f-team");
-teamSel.innerHTML = TEAMS.map((t, i) => `<option value="${i}">${esc(t)}</option>`).join("");
-document.getElementById("add").addEventListener("submit", e => {
-  e.preventDefault();
-  const v = id => document.getElementById(id).value.trim();
-  players.push({
-    name: v("f-name"), pos: v("f-pos").toUpperCase(), injury: v("f-inj"),
-    count: Math.max(0, parseInt(v("f-count"), 10) || 0),
-    searches: Math.max(0, parseInt(v("f-search"), 10) || 0),
-    team: +teamSel.value
-  });
-  e.target.reset();
-  save(); render();
-});
-document.getElementById("reset").addEventListener("click", () => {
-  players = EXAMPLE.map(p => ({ ...p }));
-  save(); render();
-});
-
-render();
+// Use the saved copy if it is recent; otherwise load fresh data.
+(function start() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (saved && Array.isArray(saved.players) && Date.now() - new Date(saved.stamp) < CACHE_HOURS * 3600e3) {
+      players = saved.players;
+      showLoaded(saved.stamp);
+      return;
+    }
+  } catch (e) {}
+  loadLive();
+})();
 </script>
 </body>
 </html>
