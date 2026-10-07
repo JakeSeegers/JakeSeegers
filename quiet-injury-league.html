@@ -90,6 +90,11 @@ button:disabled { opacity: .55; cursor: wait; }
 .why p, .why ul { margin: 0; }
 .why ul { padding-left: 1.2em; }
 @media (prefers-reduced-motion: no-preference) { .bar span, .progress span { transition: width .4s ease; } }
+.chip.some { background: var(--line); color: var(--ink); }
+.cell-sub { display: block; font-size: .75rem; color: var(--muted); font-family: var(--font-body); }
+.measure { display: flex; flex-wrap: wrap; gap: 6px; }
+.measure button { background: transparent; color: var(--accent); }
+.measure button[aria-pressed="true"] { background: var(--accent); color: var(--paper); }
 </style>
 </head>
 <body>
@@ -98,8 +103,8 @@ button:disabled { opacity: .55; cursor: wait; }
 <header>
   <span class="eyebrow">Live NFL injury report</span>
   <h1>Quiet Injury League</h1>
-  <p>All 32 NFL teams, rated by how many of their players are hurt right now and how little the internet looks those players up. The team with the most injuries and the least attention "wins".</p>
-  <div class="formula"><b>Silence Score</b> = injured players ÷ Wikipedia views (30 days) × 100,000</div>
+  <p>All 32 NFL teams, rated by how many of their players are hurt right now and how little attention those injuries got. The team with the most injuries and the least attention "wins".</p>
+  <div class="formula" id="formula"></div>
 </header>
 
 <section aria-labelledby="load-h">
@@ -109,13 +114,20 @@ button:disabled { opacity: .55; cursor: wait; }
     <span id="status" class="status-line">Not loaded yet.</span>
   </div>
   <div class="progress" aria-hidden="true"><span id="bar"></span></div>
+  <span id="news-status" class="status-line"></span>
 </section>
 
 <section aria-labelledby="standings-h">
-  <h2 id="standings-h">Standings</h2>
+  <div class="row" style="justify-content: space-between">
+    <h2 id="standings-h">Standings</h2>
+    <div class="measure" role="group" aria-label="Measure attention by">
+      <button type="button" id="m-views" data-measure="views" aria-pressed="true">Wikipedia spike</button>
+      <button type="button" id="m-news" data-measure="news" aria-pressed="false">News headlines</button>
+    </div>
+  </div>
   <div class="sheet">
     <table>
-      <thead><tr><th></th><th>Team</th><th class="num">Injured</th><th class="num">Views</th><th class="num">Silence Score</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Team</th><th class="num">Injured</th><th class="num" id="att-h">Extra views</th><th class="num">Silence Score</th><th></th></tr></thead>
       <tbody id="standings"><tr class="empty"><td colspan="6">Press "Load live data" to rate the 32 teams.</td></tr></tbody>
     </table>
   </div>
@@ -129,8 +141,8 @@ button:disabled { opacity: .55; cursor: wait; }
   </div>
   <div class="sheet">
     <table>
-      <thead><tr><th>Player</th><th>Team</th><th>Pos</th><th>Status</th><th>Injury</th><th class="num">Views (30 d)</th><th>Attention</th></tr></thead>
-      <tbody id="players"><tr class="empty"><td colspan="7">The most ignored injuries show first.</td></tr></tbody>
+      <thead><tr><th>Player</th><th>Team</th><th>Status</th><th>Injury</th><th>Since</th><th class="num">Extra views</th><th>On Wikipedia</th><th class="num">Headlines</th></tr></thead>
+      <tbody id="players"><tr class="empty"><td colspan="8">The least-noticed injuries show first.</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -139,10 +151,12 @@ button:disabled { opacity: .55; cursor: wait; }
   <h2 id="why-h">Where the numbers come from</h2>
   <ul>
     <li><b>Injuries:</b> the current NFL injury list from the <a href="https://docs.sleeper.com/" target="_blank" rel="noopener">Sleeper API</a>. A player counts if his status is IR, PUP, Out, Doubtful or Questionable.</li>
-    <li><b>Attention:</b> each player's English Wikipedia page views for the last 30 days, from the <a href="https://www.mediawiki.org/wiki/API:Main_page" target="_blank" rel="noopener">Wikipedia API</a>. Google does not publish real search counts, so page views are the closest free, public measure.</li>
-    <li>The app finds each player's article with a Wikipedia search. Click a player's name to check the match. Players with no article count as 0 views.</li>
+    <li><b>Extra views:</b> how many more people than normal read the player's English Wikipedia article in the 30 days after the injury. "Normal" is his median daily views in the 30 days before it. When Sleeper gives no injury date, the app uses the date of his last news update ("approx.") or the last 30 days ("date unknown"). Data from the <a href="https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews" target="_blank" rel="noopener">Wikimedia Pageviews API</a>.</li>
+    <li><b>On Wikipedia:</b> whether the article mentions an injury in the current season. "Yes" means it names this body part. "Some" means it mentions an injury but not this body part.</li>
+    <li><b>Headlines:</b> English news headlines in the last 30 days that name the player, from articles that mention an injury. Data from the <a href="https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/" target="_blank" rel="noopener">GDELT news database</a>. GDELT allows one request every 5 seconds, so this column fills in over a few minutes.</li>
+    <li>Click a player's name to check that the app found the right article.</li>
   </ul>
-  <p>Fans look up a star quarterback's ankle hundreds of thousands of times. A backup lineman with a concussion gets almost no views. The harm is the same kind of harm. The attention is not. If a team is winning this league, that is the problem.</p>
+  <p>Fans look up a star quarterback's ankle hundreds of thousands of times. A backup lineman with a concussion gets almost no attention. The harm is the same kind of harm. The attention is not. If a team is winning this league, that is the problem.</p>
 </section>
 
 </div>
@@ -158,97 +172,290 @@ const TEAMS = {
   NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SF: "San Francisco 49ers",
   SEA: "Seattle Seahawks", TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Commanders"
 };
+const POS_WORD = {
+  QB: "quarterback", RB: "running back", FB: "fullback", WR: "wide receiver", TE: "tight end",
+  OT: "offensive tackle", T: "offensive tackle", G: "guard", OG: "guard", C: "center", OL: "offensive lineman",
+  DE: "defensive end", DT: "defensive tackle", DL: "defensive lineman", LB: "linebacker", OLB: "linebacker",
+  ILB: "linebacker", CB: "cornerback", S: "safety", SS: "safety", FS: "safety", DB: "defensive back",
+  K: "kicker", P: "punter", LS: "long snapper"
+};
 const INJURED = ["IR", "PUP", "Out", "Doubtful", "Questionable"];
-const CACHE_KEY = "quiet-injury-league-live-v1";
+const MEASURES = {
+  views: { label: "Extra views", per: 1000, unit: "1,000 extra Wikipedia views" },
+  news: { label: "Headlines", per: 10, unit: "10 news headlines" }
+};
+const CACHE_KEY = "quiet-injury-league-live-v2";
 const CACHE_HOURS = 12;
 const WIKI = "https://en.wikipedia.org/w/api.php";
+const PAGEVIEWS = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/";
+const GDELT = "https://api.gdeltproject.org/api/v2/doc/doc";
+const DAY = 86400e3;
+// The NFL season that started in the fall. January and February still belong to last year's season.
+const SEASON = new Date().getMonth() >= 2 ? new Date().getFullYear() : new Date().getFullYear() - 1;
 
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString("en-US");
 const fmtScore = n => n >= 100 ? fmt(Math.round(n)) : n.toFixed(n >= 10 ? 1 : 2);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-// Injured players per 100,000 page views. Zero views counts as 1 so the score stays finite.
-function silence(injured, views) {
-  return injured / Math.max(views, 1) * 100000;
-}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const chunks = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, "");
 
 let players = [];
+let stamp = null;
+let measure = "views";
 
 function setStatus(text, isError) {
   $("status").textContent = text;
   $("status").classList.toggle("error", !!isError);
 }
-function setProgress(f) { $("bar").style.width = (f * 100).toFixed(1) + "%"; }
+function setProgress(f) { $("bar").style.width = (Math.min(f, 1) * 100).toFixed(1) + "%"; }
 
-async function getJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} from ${new URL(url).host}`);
-  return res.json();
-}
-
-async function loadInjuries() {
-  const all = await getJSON("https://api.sleeper.app/v1/players/nfl");
-  return Object.entries(all)
-    .map(([id, p]) => ({ id, ...p }))
-    .filter(p => p.team && TEAMS[p.team] && INJURED.includes(p.injury_status))
-    .map(p => ({
-      id: p.id,
-      name: p.full_name || `${p.first_name} ${p.last_name}`,
-      last: p.last_name || "",
-      team: p.team,
-      pos: p.position || "",
-      status: p.injury_status,
-      injury: [p.injury_body_part, p.injury_notes].filter(Boolean).join(" – ") || "Not listed"
-    }));
-}
-
-// One request per player: search Wikipedia for the player and get the top hit's daily views.
-async function lookupViews(p) {
-  const params = new URLSearchParams({
-    action: "query", format: "json", origin: "*", formatversion: "2",
-    generator: "search", gsrsearch: `${p.name} American football ${TEAMS[p.team]}`, gsrlimit: "1",
-    prop: "pageviews", pvipdays: "30"
-  });
-  const data = await getJSON(`${WIKI}?${params}`);
-  const page = data.query?.pages?.[0];
-  // Only trust the hit if the article title has the player's last name in it.
-  if (!page || (p.last && !page.title.toLowerCase().includes(p.last.toLowerCase()))) {
-    return { article: null, views: 0 };
+// Fetch JSON. Waits and tries again when a site says "too many requests" or has a short outage.
+async function getJSON(url, { allow404 = false, tries = 4 } = {}) {
+  for (let i = 0; ; i++) {
+    let res;
+    try { res = await fetch(url); }
+    catch (e) { if (i >= tries - 1) throw e; await sleep(1500 * 2 ** i); continue; }
+    if (res.ok) return res.json();
+    if (res.status === 404 && allow404) return null;
+    if ((res.status === 429 || res.status >= 500) && i < tries - 1) { await sleep(1500 * 2 ** i); continue; }
+    throw new Error(`${res.status} from ${new URL(url).host}`);
   }
-  const views = Object.values(page.pageviews || {}).reduce((a, v) => a + (v || 0), 0);
-  return { article: page.title, views };
 }
 
 async function runPool(items, size, fn, onTick) {
   let next = 0, done = 0;
   async function worker() {
     while (next < items.length) {
-      const i = next++;
-      try { Object.assign(items[i], await fn(items[i])); }
-      catch (e) { Object.assign(items[i], { article: null, views: 0, failed: true }); }
+      const item = items[next++];
+      try { await fn(item); } catch (e) { item.failed = true; }
       onTick(++done);
     }
   }
   await Promise.all(Array.from({ length: size }, worker));
 }
 
+// ---------- Injuries ----------
+
+async function loadInjuries() {
+  const all = await getJSON("https://api.sleeper.app/v1/players/nfl");
+  return Object.entries(all)
+    .map(([id, p]) => ({ id, ...p }))
+    .filter(p => p.team && TEAMS[p.team] && INJURED.includes(p.injury_status))
+    .map(p => {
+      let since = null, dateKind = "unknown";
+      if (p.injury_start_date && !isNaN(Date.parse(p.injury_start_date))) {
+        since = p.injury_start_date.slice(0, 10); dateKind = "exact";
+      } else if (p.news_updated) {
+        since = new Date(+p.news_updated).toISOString().slice(0, 10); dateKind = "approx";
+      }
+      return {
+        id: p.id,
+        name: p.full_name || `${p.first_name} ${p.last_name}`,
+        last: p.last_name || "",
+        team: p.team,
+        pos: p.position || "",
+        status: p.injury_status,
+        part: p.injury_body_part || "",
+        injury: [p.injury_body_part, p.injury_notes].filter(Boolean).join(" – ") || "Not listed",
+        since, dateKind,
+        article: null, extra: 0, base: 0, mention: null, headlines: null
+      };
+    });
+}
+
+// ---------- Wikipedia: find each player's article ----------
+
+const isFootball = text => /american football|national football league|\bNFL\b/i.test(text || "");
+
+// Try likely article titles 20 at a time: "Name", "Name (American football)", "Name (linebacker)".
+async function findArticles(list, onTick) {
+  const guesses = [
+    p => p.name,
+    p => `${p.name} (American football)`,
+    p => POS_WORD[p.pos] ? `${p.name} (${POS_WORD[p.pos]})` : null
+  ];
+  for (const guess of guesses) {
+    const todo = list.filter(p => !p.article).map(p => ({ p, t: guess(p) })).filter(x => x.t);
+    for (const batch of chunks(todo, 20)) {
+      try {
+        const data = await getJSON(`${WIKI}?` + new URLSearchParams({
+          action: "query", format: "json", formatversion: "2", origin: "*", redirects: "1",
+          prop: "pageprops|extracts", ppprop: "disambiguation",
+          exintro: "1", explaintext: "1", exsentences: "2", exlimit: "20",
+          titles: batch.map(x => x.t).join("|")
+        }));
+        const q = data.query || {};
+        const step = new Map([...(q.normalized || []), ...(q.redirects || [])].map(r => [r.from, r.to]));
+        const pages = new Map((q.pages || []).map(pg => [pg.title, pg]));
+        for (const { p, t } of batch) {
+          let title = t;
+          for (let i = 0; i < 3 && step.has(title); i++) title = step.get(title);
+          const pg = pages.get(title);
+          if (pg && !pg.missing && !pg.pageprops?.disambiguation && isFootball(pg.extract)) p.article = pg.title;
+        }
+      } catch (e) { /* this batch failed; these players fall through to the next guess */ }
+      onTick();
+    }
+  }
+  // Last try: a Wikipedia search, one player at a time and slowly.
+  const left = list.filter(p => !p.article);
+  await runPool(left, 2, async p => {
+    let data;
+    try { data = await getJSON(`${WIKI}?` + new URLSearchParams({
+      action: "query", format: "json", formatversion: "2", origin: "*",
+      generator: "search", gsrsearch: `${p.name} American football`, gsrlimit: "3",
+      prop: "extracts", exintro: "1", explaintext: "1", exsentences: "2", exlimit: "3"
+    })); } catch (e) { return; }
+    const hit = (data.query?.pages || []).sort((a, b) => a.index - b.index)
+      .find(pg => norm(pg.title).includes(norm(p.last)) && isFootball(pg.extract));
+    if (hit) p.article = hit.title;
+  }, onTick);
+}
+
+// ---------- Wikipedia: views before and after the injury ----------
+
+function median(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0;
+}
+
+// The 30 days from the injury date (or the last 30 days) against the 30 days before it.
+function viewWindow(p, today) {
+  const yesterday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) - DAY);
+  let start = p.since ? new Date(p.since + "T00:00:00Z") : new Date(yesterday - 29 * DAY);
+  if (start > yesterday) start = yesterday;
+  const end = new Date(Math.min(+start + 29 * DAY, +yesterday));
+  return { baseFrom: new Date(start - 30 * DAY), start, end };
+}
+
+function extraViews(daily, win) {
+  const base = [];
+  for (let d = +win.baseFrom; d < +win.start; d += DAY) base.push(daily.get(ymd(new Date(d))) || 0);
+  const normal = median(base);
+  let extra = 0;
+  for (let d = +win.start; d <= +win.end; d += DAY) extra += Math.max(0, (daily.get(ymd(new Date(d))) || 0) - normal);
+  return { extra: Math.round(extra), base: Math.round(normal) };
+}
+
+async function loadViews(p) {
+  if (!p.article) return;
+  const win = viewWindow(p, new Date());
+  const title = encodeURIComponent(p.article.replace(/ /g, "_"));
+  const data = await getJSON(`${PAGEVIEWS}${title}/daily/${ymd(win.baseFrom)}00/${ymd(win.end)}00`, { allow404: true });
+  const daily = new Map((data?.items || []).map(it => [it.timestamp.slice(0, 8), it.views]));
+  Object.assign(p, extraViews(daily, win));
+}
+
+// ---------- Wikipedia: does the article mention the injury? ----------
+
+const INJURY_WORDS = /injur|torn|tear|sprain|strain|fractur|broke|surgery|concussion|injured reserve|\bIR\b/i;
+
+function seasonText(wikitext) {
+  const text = wikitext
+    .replace(/<ref[^>]*\/>/g, "").replace(/<ref[\s\S]*?<\/ref>/g, "")
+    .replace(/\[\[(?:[^|\]]*\|)?([^\]]*)\]\]/g, "$1");
+  const parts = [];
+  let inSeason = false;
+  for (const line of text.split("\n")) {
+    const h = line.match(/^(=+)\s*(.*?)\s*\1\s*$/);
+    if (h) { inSeason = h[2].includes(String(SEASON)) || /present/i.test(h[2]); continue; }
+    if (inSeason) parts.push(line);
+    else parts.push(...line.split(/(?<=[.!?])\s+/).filter(s => s.includes(String(SEASON))));
+  }
+  return parts.join("\n");
+}
+
+function mentionLevel(wikitext, part) {
+  const sentences = seasonText(wikitext).split(/(?<=[.!?])\s+|\n/).filter(s => INJURY_WORDS.test(s));
+  if (!sentences.length) return "no";
+  const word = norm(part).split(" ")[0];
+  if (word && sentences.some(s => norm(s).includes(word))) return "yes";
+  if (/concussion/i.test(part) && sentences.some(s => /concussion|head/i.test(s))) return "yes";
+  return "some";
+}
+
+async function loadMentions(list, onTick) {
+  const withArticle = list.filter(p => p.article);
+  await runPool(chunks(withArticle, 10), 2, async batch => {
+    const data = await getJSON(`${WIKI}?` + new URLSearchParams({
+      action: "query", format: "json", formatversion: "2", origin: "*",
+      prop: "revisions", rvprop: "content", rvslots: "main",
+      titles: batch.map(p => p.article).join("|")
+    }));
+    const text = new Map((data.query?.pages || []).map(pg => [pg.title, pg.revisions?.[0]?.slots?.main?.content || ""]));
+    for (const p of batch) if (text.has(p.article)) p.mention = mentionLevel(text.get(p.article), p.part);
+  }, onTick);
+}
+
+// ---------- News headlines (GDELT) ----------
+
+// GDELT asks for one request every 5 seconds, so names go in groups of 10.
+async function loadNews(list, onTick) {
+  const lastCount = new Map();
+  for (const p of list) lastCount.set(norm(p.last), (lastCount.get(norm(p.last)) || 0) + 1);
+  const groups = chunks(list, 10);
+  let failed = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const names = group.map(p => `"${p.name.replace(/"/g, "")}"`);
+    const query = `${names.length > 1 ? `(${names.join(" OR ")})` : names[0]} (injury OR injured OR injuries) sourcelang:english`;
+    try {
+      const data = await getJSON(`${GDELT}?` + new URLSearchParams({
+        query, mode: "artlist", maxrecords: "250", format: "json", timespan: "30d", sort: "datedesc"
+      }), { tries: 2 });
+      const titles = (data?.articles || []).map(a => ` ${norm(a.title)} `);
+      for (const p of group) {
+        const full = ` ${norm(p.name)} `, last = ` ${norm(p.last)} `;
+        const lastOk = norm(p.last).length >= 4 && lastCount.get(norm(p.last)) === 1;
+        p.headlines = titles.filter(t => t.includes(full) || (lastOk && t.includes(last))).length;
+      }
+    } catch (e) { failed++; }
+    onTick(i + 1, groups.length, failed);
+    if (i < groups.length - 1) await sleep(5500);
+  }
+  return failed;
+}
+
+// ---------- Loading ----------
+
 async function loadLive() {
   $("load").disabled = true;
   setProgress(0);
+  $("news-status").textContent = "";
   try {
     setStatus("Getting the NFL injury list…");
     const list = await loadInjuries();
-    setProgress(0.1);
-    setStatus(`Found ${list.length} injured players. Getting Wikipedia views…`);
-    await runPool(list, 6, lookupViews, done => {
-      setProgress(0.1 + 0.9 * done / list.length);
-      setStatus(`Getting Wikipedia views… ${done} of ${list.length}`);
-    });
     players = list;
-    const stamp = new Date().toISOString();
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stamp, players })); } catch (e) {}
-    showLoaded(stamp);
+    stamp = new Date().toISOString();
+    setProgress(0.05);
+    render();
+
+    // News runs at the same time as Wikipedia, because GDELT is slow on purpose.
+    const news = loadNews(list, (done, total, failed) => {
+      $("news-status").textContent = done < total
+        ? `News headlines: group ${done} of ${total}…`
+        : failed ? `News headlines: ${failed} of ${total} groups failed. Those players show "–".` : "News headlines: done.";
+      if (measure === "news" || done === total) render();
+    }).then(() => save());
+
+    setStatus(`Found ${list.length} injured players. Finding their Wikipedia articles…`);
+    let ticks = 0;
+    await findArticles(list, () => setProgress(0.05 + Math.min(0.25, ++ticks * 0.006)));
+
+    setStatus("Getting Wikipedia views…");
+    const withArticle = list.filter(p => p.article);
+    await runPool(withArticle, 4, loadViews, done => setProgress(0.3 + 0.4 * done / withArticle.length));
+
+    setStatus("Checking articles for injury mentions…");
+    const batches = Math.ceil(withArticle.length / 10) || 1;
+    await loadMentions(list, done => setProgress(0.7 + 0.3 * done / batches));
+
+    save();
+    showLoaded();
+    await news;
   } catch (e) {
     setStatus(`Could not load the data (${e.message}). Check your internet connection and try again. This page must be opened as a normal web page, not inside a preview.`, true);
   } finally {
@@ -256,20 +463,35 @@ async function loadLive() {
   }
 }
 
-function showLoaded(stamp) {
+function save() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stamp, players })); } catch (e) {}
+}
+
+function showLoaded() {
+  const found = players.filter(p => p.article).length;
   const failed = players.filter(p => p.failed).length;
-  const when = new Date(stamp).toLocaleString();
-  setStatus(`Live data from ${when}. ${players.length} injured players.` + (failed ? ` ${failed} view lookups failed and count as 0.` : ""));
+  setStatus(`Live data from ${new Date(stamp).toLocaleString()}. ${players.length} injured players, ${found} with a Wikipedia article.` +
+    (failed ? ` ${failed} view lookups failed and count as 0.` : ""));
   setProgress(1);
   $("load").textContent = "Refresh data";
   render();
 }
 
+// ---------- Display ----------
+
+// Injured players per 1,000 extra views (or per 10 headlines). Zero attention counts as 1 so the score stays finite.
+function attention(p) { return measure === "views" ? p.extra : (p.headlines ?? 0); }
+function silence(injured, att) { return injured / Math.max(att, 1) * MEASURES[measure].per; }
+
 function renderStandings() {
+  const m = MEASURES[measure];
+  $("formula").innerHTML = `<b>Silence Score</b> = injured players per ${m.unit}`;
+  $("att-h").textContent = m.label;
+  if (!players.length) return;
   const rows = Object.entries(TEAMS).map(([abbr, name]) => {
     const roster = players.filter(p => p.team === abbr);
-    const views = roster.reduce((a, p) => a + p.views, 0);
-    return { abbr, name, injured: roster.length, views, score: roster.length ? silence(roster.length, views) : 0 };
+    const att = roster.reduce((a, p) => a + attention(p), 0);
+    return { abbr, name, injured: roster.length, att, score: roster.length ? silence(roster.length, att) : 0 };
   }).sort((a, b) => b.score - a.score);
   const top = Math.max(...rows.map(r => r.score), 1);
   $("standings").innerHTML = rows.map((r, i) => `
@@ -277,49 +499,72 @@ function renderStandings() {
       <td class="rank">${i + 1}</td>
       <td class="team-name">${esc(r.name)}<span class="team-sub">${r.abbr}</span></td>
       <td class="num">${fmt(r.injured)}</td>
-      <td class="num">${fmt(r.views)}</td>
+      <td class="num">${fmt(r.att)}</td>
       <td class="num score">${fmtScore(r.score)}</td>
       <td><div class="bar"><span style="width:${(r.score / top * 100).toFixed(1)}%"></span></div></td>
     </tr>`).join("");
 }
 
+const MENTION_CHIP = {
+  yes: `<span class="chip seen">Yes</span>`,
+  some: `<span class="chip some">Some</span>`,
+  no: `<span class="chip ignored">No</span>`
+};
+
 function renderPlayers() {
+  if (!players.length) return;
   const team = $("filter").value;
-  const list = players.filter(p => !team || p.team === team).sort((a, b) => a.views - b.views);
+  const list = players.filter(p => !team || p.team === team).sort((a, b) => attention(a) - attention(b) || a.extra - b.extra);
   if (!list.length) {
-    $("players").innerHTML = `<tr class="empty"><td colspan="7">No injured players listed for this team.</td></tr>`;
+    $("players").innerHTML = `<tr class="empty"><td colspan="8">No injured players listed for this team.</td></tr>`;
     return;
   }
   $("players").innerHTML = list.map(p => {
     const name = p.article
       ? `<a href="https://en.wikipedia.org/wiki/${encodeURIComponent(p.article.replace(/ /g, "_"))}" target="_blank" rel="noopener">${esc(p.name)}</a>`
-      : `${esc(p.name)} <span class="team-sub">No Wikipedia article found</span>`;
-    const chip = p.views < 3000 ? `<span class="chip ignored">Ignored</span>` : `<span class="chip seen">Seen</span>`;
+      : esc(p.name);
+    const since = p.since
+      ? `${esc(p.since)}${p.dateKind === "approx" ? `<span class="cell-sub">approx.</span>` : ""}`
+      : `<span class="cell-sub">date unknown</span>`;
+    const views = p.article ? `${fmt(p.extra)}<span class="cell-sub">normal ${fmt(p.base)}/day</span>` : "–";
+    const mention = !p.article ? `<span class="chip ignored">No article</span>` : (MENTION_CHIP[p.mention] || "–");
     return `<tr>
-      <td>${name}</td>
+      <td>${name}<span class="cell-sub">${esc(p.pos)}</span></td>
       <td>${p.team}</td>
-      <td>${esc(p.pos)}</td>
       <td><span class="chip status">${esc(p.status)}</span></td>
       <td>${esc(p.injury)}</td>
-      <td class="num">${fmt(p.views)}</td>
-      <td>${chip}</td>
+      <td>${since}</td>
+      <td class="num">${views}</td>
+      <td>${mention}</td>
+      <td class="num">${p.headlines == null ? "–" : fmt(p.headlines)}</td>
     </tr>`;
   }).join("");
 }
 
 function render() { renderStandings(); renderPlayers(); }
 
+function setMeasure(m) {
+  measure = m;
+  for (const b of document.querySelectorAll(".measure button")) b.setAttribute("aria-pressed", String(b.dataset.measure === m));
+  try { localStorage.setItem(CACHE_KEY + "-measure", m); } catch (e) {}
+  render();
+}
+
 $("filter").innerHTML += Object.entries(TEAMS).map(([a, n]) => `<option value="${a}">${esc(n)}</option>`).join("");
 $("filter").addEventListener("change", renderPlayers);
 $("load").addEventListener("click", loadLive);
+for (const b of document.querySelectorAll(".measure button")) b.addEventListener("click", () => setMeasure(b.dataset.measure));
 
 // Use the saved copy if it is recent; otherwise load fresh data.
 (function start() {
+  try { const m = localStorage.getItem(CACHE_KEY + "-measure"); if (MEASURES[m]) measure = m; } catch (e) {}
+  setMeasure(measure);
   try {
     const saved = JSON.parse(localStorage.getItem(CACHE_KEY));
-    if (saved && Array.isArray(saved.players) && Date.now() - new Date(saved.stamp) < CACHE_HOURS * 3600e3) {
+    if (saved && Array.isArray(saved.players) && saved.players.length && Date.now() - new Date(saved.stamp) < CACHE_HOURS * 3600e3) {
       players = saved.players;
-      showLoaded(saved.stamp);
+      stamp = saved.stamp;
+      showLoaded();
       return;
     }
   } catch (e) {}
