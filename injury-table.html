@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Injury Table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a team-trainer's clipboard. League totals, the fantasy league, then NFL standings, then the injury report. */
+:root {
+  --bg: #e9eef2;
+  --paper: #f8fafb;
+  --ink: #15212b;
+  --muted: #5a6b78;
+  --line: #c9d3db;
+  --accent: #1f5f8b;
+  --hurt: #b3261e;
+  --hurt-soft: #f6dcd9;
+  --quiet: #2e6b47;
+  --quiet-soft: #dcefe3;
+  --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f161c; --paper: #17212a; --ink: #e3eaf0; --muted: #93a4b2; --line: #2b3a46;
+    --accent: #7fb6dd; --hurt: #f08a80; --hurt-soft: #3a1f1d; --quiet: #7fcf9e; --quiet-soft: #18302a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f161c; --paper: #17212a; --ink: #e3eaf0; --muted: #93a4b2; --line: #2b3a46;
+  --accent: #7fb6dd; --hurt: #f08a80; --hurt-soft: #3a1f1d; --quiet: #7fcf9e; --quiet-soft: #18302a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 var(--font-body);
+  padding-inline: 16px; padding-block: 24px 48px;
+}
+.wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2 { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .02em; margin: 0; text-wrap: balance; line-height: 1; }
+h1 { font-size: clamp(2.6rem, 8vw, 4.4rem); font-weight: 900; }
+h2 { font-size: 1.7rem; font-weight: 700; }
+.eyebrow { font: 600 .75rem/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase; color: var(--hurt); }
+header { display: grid; gap: 12px; }
+header p { margin: 0; max-width: 62ch; color: var(--muted); }
+.formula {
+  font-family: var(--font-data); font-size: .9rem; background: var(--paper);
+  border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; width: fit-content; max-width: 100%;
+}
+.formula b { color: var(--accent); }
+section { display: grid; gap: 14px; }
+.sheet { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 600 .7rem/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--font-data); }
+.rank { font-family: var(--font-display); font-size: 1.6rem; font-weight: 900; width: 2.5rem; color: var(--muted); }
+tr.first .rank { color: var(--hurt); }
+.team-name { font-weight: 600; }
+.team-sub { display: block; font-size: .8rem; color: var(--muted); font-weight: 400; }
+.score { font-weight: 600; font-size: 1.05rem; }
+.bar { height: 6px; background: var(--line); border-radius: 3px; min-width: 80px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--hurt); }
+.chip { display: inline-block; font: 600 .7rem/1 var(--font-data); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; }
+.chip.ignored { background: var(--hurt-soft); color: var(--hurt); }
+.chip.seen { background: var(--quiet-soft); color: var(--quiet); }
+.chip.status { border: 1px solid var(--line); color: var(--muted); }
+a { color: var(--accent); }
+button, select { font: inherit; color: var(--ink); }
+select { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid var(--accent); background: var(--accent); color: var(--paper); font-weight: 600; }
+button:disabled { opacity: .55; cursor: wait; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.note { font-size: .85rem; color: var(--muted); margin: 0; max-width: 70ch; }
+.status-line { font-family: var(--font-data); font-size: .85rem; color: var(--muted); }
+.status-line.error { color: var(--hurt); }
+.progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--accent); }
+.empty td { color: var(--muted); white-space: normal; }
+.why { border-left: 3px solid var(--hurt); padding-left: 14px; display: grid; gap: 8px; max-width: 68ch; }
+.why p, .why ul { margin: 0; }
+.why ul { padding-left: 1.2em; }
+@media (prefers-reduced-motion: no-preference) { .bar span, .progress span { transition: width .4s ease; } }
+.cell-sub { display: block; font-size: .75rem; color: var(--muted); font-family: var(--font-body); }
+.totals { display: flex; flex-wrap: wrap; gap: 12px 32px; }
+.total { display: grid; gap: 2px; }
+.total b { font: 900 2.6rem/1 var(--font-display); color: var(--hurt); font-variant-numeric: tabular-nums; }
+.total span { font: 600 .7rem/1.3 var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; min-width: 0; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.ghost { background: transparent; color: var(--accent); }
+button.small { padding: 3px 10px; font-size: .8rem; }
+button.danger { border-color: var(--hurt); background: transparent; color: var(--hurt); }
+button:disabled { cursor: not-allowed; }
+h3 { font: 700 1.25rem/1.1 var(--font-display); text-transform: uppercase; letter-spacing: .02em; margin: 0; }
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; }
+.setup-teams { display: grid; gap: 8px; }
+.setup-teams .row input { flex: 1 1 200px; }
+.on-clock { border-left: 3px solid var(--accent); padding-left: 12px; }
+.on-clock b { color: var(--accent); }
+.rosters { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.roster { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.roster.clock { border-color: var(--accent); }
+.roster-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.roster-head b { font: 900 1.6rem/1 var(--font-display); color: var(--hurt); font-variant-numeric: tabular-nums; }
+.roster ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.roster li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .9rem; }
+.roster li .who { min-width: 0; }
+.roster li .pts { font-family: var(--font-data); white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.roster li.healed .who { color: var(--muted); }
+.slot-empty { color: var(--muted); font-size: .85rem; font-style: italic; }
+.games { display: grid; gap: 8px; }
+.game { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.game .side { min-width: 0; }
+.game .side:last-child { text-align: right; }
+.game .vs { font: 600 .7rem/1 var(--font-data); color: var(--muted); letter-spacing: .1em; }
+.game .pts { font: 900 1.5rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.game .lead { color: var(--hurt); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Live NFL injury report · Fantasy league</span>
+  <h1>The Injury Table</h1>
+  <p>A fantasy league where the only stat is harm. Draft injured NFL players. Your team scores points for how badly they are hurt. The manager with the most harm "wins".</p>
+  <div class="formula"><b>Harm points</b> = IR or PUP 3 · Out 2 · Doubtful 1.5 · Questionable 1 · head injury ×2</div>
+</header>
+
+<section aria-labelledby="load-h">
+  <h2 id="load-h" hidden>Data</h2>
+  <div class="row">
+    <button id="load" type="button">Load live data</button>
+    <span id="status" class="status-line">Not loaded yet.</span>
+  </div>
+  <div class="totals" id="totals" hidden>
+    <div class="total"><b id="t-players">0</b><span>Players hurt</span></div>
+    <div class="total"><b id="t-long">0</b><span>Out 4+ games</span></div>
+    <div class="total"><b id="t-head">0</b><span>Head injuries</span></div>
+    <div class="total"><b id="t-harm">0</b><span>Harm points</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="league-h">
+  <h2 id="league-h">Your League</h2>
+  <div id="league"></div>
+  <p class="note">Your league is saved in this browser only.</p>
+</section>
+
+<section aria-labelledby="standings-h">
+  <h2 id="standings-h">NFL Standings</h2>
+  <div class="sheet">
+    <table>
+      <thead><tr><th></th><th>Team</th><th class="num">Hurt</th><th class="num">Out 4+ games</th><th class="num">Head</th><th class="num">Harm points</th><th></th></tr></thead>
+      <tbody id="standings"><tr class="empty"><td colspan="7">Press "Load live data" to rank the 32 teams.</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="report-h">
+  <div class="row" style="justify-content: space-between">
+    <h2 id="report-h">Injury Report</h2>
+    <div class="row">
+      <label class="note" id="add-for-wrap" hidden>Adding for <select id="add-for"></select></label>
+      <label class="note">Show <select id="filter"><option value="">All NFL teams</option><option value="free">Free agents only</option></select></label>
+    </div>
+  </div>
+  <div id="report-clock" class="on-clock" hidden></div>
+  <div class="sheet">
+    <table>
+      <thead><tr><th>Player</th><th>Team</th><th>Status</th><th>Injury</th><th>Since</th><th class="num">Harm</th><th>Fantasy</th></tr></thead>
+      <tbody id="players"><tr class="empty"><td colspan="7">The most serious injuries show first.</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="why" aria-labelledby="rules-h">
+  <h2 id="rules-h">League rules</h2>
+  <ul>
+    <li><b>Draft:</b> a snake draft. The order runs 1 to last, then back from last to 1.</li>
+    <li><b>Scoring:</b> a team scores the harm points of every player on its roster who is still on the injury list.</li>
+    <li><b>Healed players score 0.</b> In this league, a player getting better costs his manager points. Think about what that says about a game that keeps score this way.</li>
+    <li><b>Matchups:</b> every week each team plays another. Press "Final whistle" to lock the week's scores and record wins and losses.</li>
+    <li><b>Waiver wire:</b> after the draft, drop a player to open a slot, then add any free agent.</li>
+  </ul>
+</section>
+
+<section class="why" aria-labelledby="why-h">
+  <h2 id="why-h">How harm is counted</h2>
+  <ul>
+    <li><b>Injuries:</b> the current NFL injury list from the <a href="https://docs.sleeper.com/" target="_blank" rel="noopener">Sleeper API</a>. A player counts if his status is IR, PUP, Out, Doubtful or Questionable.</li>
+    <li><b>Harm points follow the NFL's own injury labels.</b> IR or PUP = 3, because the player is out for at least 4 games. Out = 2. Doubtful = 1.5. Questionable = 1.</li>
+    <li><b>Head injuries count ×2.</b> A knee can heal. Concussions and repeated hits to the head can cause lasting brain damage, including CTE, a disease found in the brains of many former NFL players.</li>
+  </ul>
+  <p>Normal fantasy football turns players into points for what their bodies do. This league turns them into points for what the game does to their bodies. If your team is winning here, that is the problem.</p>
+</section>
+
+</div>
+
+<script>
+const TEAMS = {
+  ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
+  CAR: "Carolina Panthers", CHI: "Chicago Bears", CIN: "Cincinnati Bengals", CLE: "Cleveland Browns",
+  DAL: "Dallas Cowboys", DEN: "Denver Broncos", DET: "Detroit Lions", GB: "Green Bay Packers",
+  HOU: "Houston Texans", IND: "Indianapolis Colts", JAX: "Jacksonville Jaguars", KC: "Kansas City Chiefs",
+  LV: "Las Vegas Raiders", LAC: "Los Angeles Chargers", LAR: "Los Angeles Rams", MIA: "Miami Dolphins",
+  MIN: "Minnesota Vikings", NE: "New England Patriots", NO: "New Orleans Saints", NYG: "New York Giants",
+  NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SF: "San Francisco 49ers",
+  SEA: "Seattle Seahawks", TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Commanders"
+};
+// Harm points follow the NFL injury report: the longer a player is out, the more harm.
+const STATUS_HARM = { IR: 3, PUP: 3, Out: 2, Doubtful: 1.5, Questionable: 1 };
+const LONG_TERM = ["IR", "PUP"];
+const CACHE_KEY = "injury-table-data-v1";
+const LEAGUE_KEY = "injury-table-league-v1";
+const CACHE_HOURS = 12;
+const DEFAULT_TEAMS = ["Turf Burns", "The Trainer's Table", "Next Man Up", "Sideline Tents"];
+
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sum = (list, f) => list.reduce((a, p) => a + f(p), 0);
+
+const isHead = p => /concuss|head/i.test(`${p.part} ${p.notes}`);
+const harm = p => STATUS_HARM[p.status] * (isHead(p) ? 2 : 1);
+const harmWhy = p => `${p.status} ${STATUS_HARM[p.status]}` + (isHead(p) ? " · head ×2" : "");
+
+let players = [];
+let byId = new Map();
+let stamp = null;
+
+// ---------- NFL data ----------
+
+function setStatus(text, isError) {
+  $("status").textContent = text;
+  $("status").classList.toggle("error", !!isError);
+}
+
+async function loadInjuries() {
+  const res = await fetch("https://api.sleeper.app/v1/players/nfl");
+  if (!res.ok) throw new Error(`${res.status} from api.sleeper.app`);
+  const all = await res.json();
+  return Object.entries(all)
+    .filter(([, p]) => p.team && TEAMS[p.team] && STATUS_HARM[p.injury_status])
+    .map(([id, p]) => ({
+      id,
+      name: p.full_name || `${p.first_name} ${p.last_name}`,
+      team: p.team,
+      pos: p.position || "",
+      status: p.injury_status,
+      part: p.injury_body_part || "",
+      notes: p.injury_notes || "",
+      since: p.injury_start_date && !isNaN(Date.parse(p.injury_start_date)) ? p.injury_start_date.slice(0, 10) : null
+    }));
+}
+
+function setPlayers(list) {
+  players = list;
+  byId = new Map(list.map(p => [p.id, p]));
+}
+
+async function loadLive() {
+  $("load").disabled = true;
+  try {
+    setStatus("Getting the NFL injury list…");
+    setPlayers(await loadInjuries());
+    stamp = new Date().toISOString();
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stamp, players })); } catch (e) {}
+    showLoaded();
+  } catch (e) {
+    setStatus(`Could not load the injury list (${e.message}). Check your internet connection and try again.`, true);
+  } finally {
+    $("load").disabled = false;
+  }
+}
+
+function showLoaded() {
+  setStatus(`Live data from ${new Date(stamp).toLocaleString()}.`);
+  $("load").textContent = "Refresh data";
+  render();
+}
+
+// ---------- Fantasy league ----------
+
+function newLeague() {
+  return { teams: DEFAULT_TEAMS.map(name => ({ name, roster: [] })), rosterSize: 6, started: false, pick: 0, week: 1, results: [], info: {} };
+}
+function loadLeague() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LEAGUE_KEY));
+    if (saved && Array.isArray(saved.teams) && saved.teams.length >= 2) return saved;
+  } catch (e) {}
+  return newLeague();
+}
+let league = loadLeague();
+let resetArmed = false;
+let addFor = 0;
+function saveLeague() { try { localStorage.setItem(LEAGUE_KEY, JSON.stringify(league)); } catch (e) {} }
+
+const ownerOf = id => league.teams.findIndex(t => t.roster.includes(id));
+const totalPicks = () => league.teams.length * league.rosterSize;
+const freeAgents = () => players.filter(p => ownerOf(p.id) < 0);
+const draftDone = () => league.started && (league.pick >= totalPicks() || (players.length > 0 && !freeAgents().length));
+// Snake draft: 1..n in odd rounds, n..1 in even rounds.
+function onClock() {
+  const n = league.teams.length, round = Math.floor(league.pick / n), i = league.pick % n;
+  return round % 2 === 0 ? i : n - 1 - i;
+}
+const playerPoints = id => byId.has(id) ? harm(byId.get(id)) : 0;
+const teamScore = t => sum(t.roster, playerPoints);
+
+// Round-robin: team 0 stays put, the rest rotate one place each week.
+function weekGames(week) {
+  const ids = league.teams.map((_, i) => i);
+  if (ids.length % 2) ids.push(-1);
+  const rest = ids.slice(1), r = (week - 1) % rest.length;
+  const order = [ids[0], ...rest.map((_, i) => rest[(i + r) % rest.length])];
+  const games = [];
+  for (let i = 0; i < order.length / 2; i++) {
+    const a = order[i], b = order[order.length - 1 - i];
+    if (a >= 0 && b >= 0) games.push([a, b]);
+  }
+  return games;
+}
+
+function records() {
+  const rec = league.teams.map(() => ({ w: 0, l: 0, t: 0, pf: 0 }));
+  for (const wk of league.results) for (const g of wk.games) {
+    rec[g.a].pf += g.sa; rec[g.b].pf += g.sb;
+    if (g.sa > g.sb) { rec[g.a].w++; rec[g.b].l++; }
+    else if (g.sb > g.sa) { rec[g.b].w++; rec[g.a].l++; }
+    else { rec[g.a].t++; rec[g.b].t++; }
+  }
+  return rec;
+}
+
+function remember(p) { league.info[p.id] = { name: p.name, pos: p.pos, team: p.team }; }
+
+const actions = {
+  "add-team"() { if (league.teams.length < 10) league.teams.push({ name: `Team ${league.teams.length + 1}`, roster: [] }); },
+  "remove-team"(el) { if (league.teams.length > 2) league.teams.splice(+el.dataset.i, 1); },
+  "start-draft"() { league.started = true; league.pick = 0; },
+  draft(el) {
+    const p = byId.get(el.dataset.id);
+    if (!p || draftDone() || ownerOf(p.id) >= 0) return;
+    league.teams[onClock()].roster.push(p.id);
+    remember(p);
+    league.pick++;
+  },
+  add(el) {
+    const p = byId.get(el.dataset.id), t = league.teams[addFor];
+    if (!p || !t || ownerOf(p.id) >= 0 || t.roster.length >= league.rosterSize) return;
+    t.roster.push(p.id);
+    remember(p);
+  },
+  drop(el) {
+    const t = league.teams[+el.dataset.t];
+    t.roster = t.roster.filter(id => id !== el.dataset.id);
+    addFor = +el.dataset.t;
+  },
+  "lock-week"() {
+    league.results.push({ week: league.week, games: weekGames(league.week).map(([a, b]) => ({ a, b, sa: teamScore(league.teams[a]), sb: teamScore(league.teams[b]) })) });
+    league.week++;
+  },
+  reset() {
+    if (!resetArmed) { resetArmed = true; return; }
+    resetArmed = false;
+    league = newLeague();
+    addFor = 0;
+  }
+};
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  if (el.dataset.action !== "reset") resetArmed = false;
+  actions[el.dataset.action](el);
+  saveLeague();
+  render();
+});
+document.addEventListener("change", e => {
+  const el = e.target;
+  if (el.dataset.field === "team-name") league.teams[+el.dataset.i].name = el.value.trim() || `Team ${+el.dataset.i + 1}`;
+  else if (el.id === "roster-size") league.rosterSize = Math.min(15, Math.max(3, parseInt(el.value, 10) || 6));
+  else if (el.id === "add-for") { addFor = +el.value; renderPlayers(); return; }
+  else return;
+  saveLeague();
+  render();
+});
+
+function renderSetup() {
+  return `<div class="panel">
+    <h3>Set up your league</h3>
+    <div class="setup-teams">
+      ${league.teams.map((t, i) => `<div class="row">
+        <input id="team-name-${i}" data-field="team-name" data-i="${i}" value="${esc(t.name)}" aria-label="Team ${i + 1} name" maxlength="40">
+        <button type="button" class="ghost small" data-action="remove-team" data-i="${i}" ${league.teams.length <= 2 ? "disabled" : ""}>Remove</button>
+      </div>`).join("")}
+    </div>
+    <div class="row">
+      <button type="button" class="ghost" data-action="add-team" ${league.teams.length >= 10 ? "disabled" : ""}>Add team</button>
+      <label class="note">Players per team <input id="roster-size" type="number" min="3" max="15" value="${league.rosterSize}" style="width:5rem"></label>
+    </div>
+    <div class="row">
+      <button type="button" data-action="start-draft" ${players.length ? "" : "disabled"}>Start draft</button>
+      <span class="note">${players.length ? "The draft order follows the list above." : "Load live data first."}</span>
+    </div>
+  </div>`;
+}
+
+function clockText() {
+  const n = league.teams.length;
+  return `Round ${Math.floor(league.pick / n) + 1}, pick ${league.pick + 1} of ${totalPicks()}: <b>${esc(league.teams[onClock()].name)}</b> is on the clock. Press "Draft" next to a player in the injury report.`;
+}
+
+function renderRosters() {
+  const clock = league.started && !draftDone() ? onClock() : -1;
+  return `<div class="rosters">${league.teams.map((t, ti) => {
+    const rows = t.roster.map(id => {
+      const p = byId.get(id), info = p || league.info[id] || { name: id, pos: "", team: "" };
+      const pts = p
+        ? `${harm(p)}`
+        : `0 <span class="chip seen">Healed</span>`;
+      const drop = draftDone() ? `<button type="button" class="ghost small" data-action="drop" data-t="${ti}" data-id="${esc(id)}" aria-label="Drop ${esc(info.name)}">Drop</button>` : "";
+      return `<li class="${p ? "" : "healed"}"><span class="who">${esc(info.name)} <span class="cell-sub">${esc(info.pos)} · ${esc(info.team)}${p ? ` · ${esc(p.status)}${isHead(p) ? " · head" : ""}` : ""}</span></span><span class="pts">${pts}${drop}</span></li>`;
+    });
+    const open = league.rosterSize - t.roster.length;
+    if (open > 0) rows.push(`<li class="slot-empty">${open} open slot${open === 1 ? "" : "s"}</li>`);
+    return `<div class="roster${ti === clock ? " clock" : ""}">
+      <div class="roster-head"><h3>${esc(t.name)}</h3><b>${fmt(teamScore(t))}</b></div>
+      <ul>${rows.join("")}</ul>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function renderMatchups() {
+  const games = weekGames(league.week);
+  const rec = records();
+  const order = league.teams.map((team, i) => ({ team, i, ...rec[i] })).sort((a, b) => b.w - a.w || a.l - b.l || b.pf - a.pf);
+  const recStr = r => `${r.w}-${r.l}${r.t ? `-${r.t}` : ""}`;
+  const byes = league.teams.map((_, i) => i).filter(i => !games.some(g => g.includes(i)));
+  return `<div class="panel">
+    <div class="row" style="justify-content: space-between">
+      <h3>Week ${league.week} matchups</h3>
+      <button type="button" data-action="lock-week" ${players.length ? "" : "disabled"}>Final whistle: lock week ${league.week}</button>
+    </div>
+    <div class="games">${games.map(([a, b]) => {
+      const sa = teamScore(league.teams[a]), sb = teamScore(league.teams[b]);
+      return `<div class="game">
+        <div class="side">${esc(league.teams[a].name)}<span class="cell-sub">${recStr(rec[a])}</span><span class="pts ${sa > sb ? "lead" : ""}">${fmt(sa)}</span></div>
+        <span class="vs">VS</span>
+        <div class="side">${esc(league.teams[b].name)}<span class="cell-sub">${recStr(rec[b])}</span><span class="pts ${sb > sa ? "lead" : ""}">${fmt(sb)}</span></div>
+      </div>`;
+    }).join("")}</div>
+    ${byes.length ? `<p class="note">Bye this week: ${byes.map(i => esc(league.teams[i].name)).join(", ")}</p>` : ""}
+    ${league.results.length ? `<div class="sheet"><table>
+      <thead><tr><th></th><th>Manager</th><th class="num">Record</th><th class="num">Points for</th></tr></thead>
+      <tbody>${order.map((r, k) => `<tr class="${k === 0 ? "first" : ""}"><td class="rank">${k + 1}</td><td class="team-name">${esc(r.team.name)}</td><td class="num">${recStr(r)}</td><td class="num">${fmt(r.pf)}</td></tr>`).join("")}</tbody>
+    </table></div>` : `<p class="note">Live scores change as the injury list changes. Lock the week to record the result.</p>`}
+  </div>`;
+}
+
+function renderLeague() {
+  let html;
+  if (!league.started) html = renderSetup();
+  else if (!draftDone()) html = `<div class="panel on-clock"><p style="margin:0">${clockText()}</p></div>` + renderRosters();
+  else html = renderMatchups() + renderRosters();
+  if (league.started) {
+    html += `<div class="row"><button type="button" class="danger small" data-action="reset">${resetArmed ? "Press again to delete this league" : "Reset league"}</button></div>`;
+  }
+  $("league").innerHTML = html;
+}
+
+// ---------- NFL tables ----------
+
+function renderTotals() {
+  if (!players.length) return;
+  $("totals").hidden = false;
+  $("t-players").textContent = fmt(players.length);
+  $("t-long").textContent = fmt(players.filter(p => LONG_TERM.includes(p.status)).length);
+  $("t-head").textContent = fmt(players.filter(isHead).length);
+  $("t-harm").textContent = fmt(sum(players, harm));
+}
+
+function renderStandings() {
+  if (!players.length) return;
+  const rows = Object.entries(TEAMS).map(([abbr, name]) => {
+    const roster = players.filter(p => p.team === abbr);
+    return {
+      abbr, name,
+      hurt: roster.length,
+      long: roster.filter(p => LONG_TERM.includes(p.status)).length,
+      head: roster.filter(isHead).length,
+      harm: sum(roster, harm)
+    };
+  }).sort((a, b) => b.harm - a.harm || b.long - a.long);
+  const top = Math.max(...rows.map(r => r.harm), 1);
+  $("standings").innerHTML = rows.map((r, i) => `
+    <tr class="${i === 0 && r.harm > 0 ? "first" : ""}">
+      <td class="rank">${i + 1}</td>
+      <td class="team-name">${esc(r.name)}<span class="team-sub">${r.abbr}</span></td>
+      <td class="num">${fmt(r.hurt)}</td>
+      <td class="num">${fmt(r.long)}</td>
+      <td class="num">${fmt(r.head)}</td>
+      <td class="num score">${fmt(r.harm)}</td>
+      <td><div class="bar"><span style="width:${(r.harm / top * 100).toFixed(1)}%"></span></div></td>
+    </tr>`).join("");
+}
+
+function fantasyCell(p) {
+  const owner = ownerOf(p.id);
+  if (owner >= 0) return `<span class="note">${esc(league.teams[owner].name)}</span>`;
+  if (!league.started) return `<span class="note">Free agent</span>`;
+  if (!draftDone()) return `<button type="button" class="small" data-action="draft" data-id="${esc(p.id)}">Draft</button>`;
+  const full = league.teams[addFor].roster.length >= league.rosterSize;
+  return `<button type="button" class="small ghost" data-action="add" data-id="${esc(p.id)}" ${full ? `disabled title="Drop a player first"` : ""}>Add</button>`;
+}
+
+function renderPlayers() {
+  const done = draftDone();
+  if (addFor >= league.teams.length) addFor = 0;
+  $("add-for-wrap").hidden = !done;
+  $("add-for").innerHTML = league.teams.map((t, i) => `<option value="${i}"${i === addFor ? " selected" : ""}>${esc(t.name)} (${t.roster.length}/${league.rosterSize})</option>`).join("");
+  $("report-clock").hidden = !(league.started && !done);
+  if (league.started && !done) $("report-clock").innerHTML = clockText();
+  if (!players.length) return;
+
+  const show = $("filter").value;
+  const list = players
+    .filter(p => !show || (show === "free" ? ownerOf(p.id) < 0 : p.team === show))
+    .sort((a, b) => harm(b) - harm(a) || a.name.localeCompare(b.name));
+  if (!list.length) {
+    $("players").innerHTML = `<tr class="empty"><td colspan="7">No injured players to show.</td></tr>`;
+    return;
+  }
+  $("players").innerHTML = list.map(p => `<tr>
+      <td>${esc(p.name)}<span class="cell-sub">${esc(p.pos)}</span></td>
+      <td>${p.team}</td>
+      <td><span class="chip status">${esc(p.status)}</span></td>
+      <td>${esc([p.part, p.notes].filter(Boolean).join(" – ") || "Not listed")}</td>
+      <td>${p.since ? esc(p.since) : `<span class="cell-sub">not listed</span>`}</td>
+      <td class="num">${harm(p)}<span class="cell-sub">${esc(harmWhy(p))}</span></td>
+      <td>${fantasyCell(p)}</td>
+    </tr>`).join("");
+}
+
+function render() { renderTotals(); renderLeague(); renderStandings(); renderPlayers(); }
+
+$("filter").innerHTML += Object.entries(TEAMS).map(([a, n]) => `<option value="${a}">${esc(n)}</option>`).join("");
+$("filter").addEventListener("change", renderPlayers);
+$("load").addEventListener("click", loadLive);
+
+// Use the saved copy if it is recent; otherwise load fresh data.
+(function start() {
+  render();
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (saved && Array.isArray(saved.players) && saved.players.length && Date.now() - new Date(saved.stamp) < CACHE_HOURS * 3600e3) {
+      setPlayers(saved.players);
+      stamp = saved.stamp;
+      showLoaded();
+      return;
+    }
+  } catch (e) {}
+  loadLive();
+})();
+</script>
+</body>
+</html>
